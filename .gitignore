@@ -9,9 +9,12 @@ work
 .idea
 out
 
+.vscode/
+
 .classpath
 .project
 .settings
+.factorypath
 
 demo/snapshot/plugins/
 
