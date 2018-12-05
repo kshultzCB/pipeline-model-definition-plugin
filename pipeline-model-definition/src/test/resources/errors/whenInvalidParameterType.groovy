@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright (c) 2018, CloudBees, Inc.
+ * Copyright (c) 2016, CloudBees, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,17 +25,21 @@
 pipeline {
     agent any
     stages {
-        stage("First") {
+        stage("One") {
             steps {
-                echo "Nothing to see here"
+                echo "Hello"
             }
         }
-        stage("Second") {
-            agent {
-                label ("some-named-agent")
+        stage("Two") {
+            when {
+                branch 4
             }
             steps {
-                echo "Should not see me either"
+                script {
+                    echo "World"
+                    echo "Heal it"
+                }
+
             }
         }
     }
