@@ -615,6 +615,14 @@ public class ValidatorTest extends AbstractModelDefTest {
                 .go();
     }
 
+    @Issue ("JENKINS-51891")
+    @Test
+    public void invalidNestedAgent() throws Exception {
+        expectError("invalidNestedAgent")
+                .logContains(Messages.ModelParser_TooManyAgentsInStage())
+                .go();
+    }
+
     @Issue("JENKINS-42550")
     @Test
     public void undefinedSectionReferencesCorrectly() throws Exception {
