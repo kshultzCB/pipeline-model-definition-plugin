@@ -22,6 +22,8 @@
  * THE SOFTWARE.
  */
 
+// Sets a top level agent of "any," then attempts to set second, "nested" agent
+// from inside a stage.
 pipeline {
     agent any
     stages {
@@ -32,7 +34,7 @@ pipeline {
         }
         stage("Second") {
             agent {
-                label ("some-named-agent")
+                label ("some-label")
             }
             steps {
                 echo "Should not see me either"
