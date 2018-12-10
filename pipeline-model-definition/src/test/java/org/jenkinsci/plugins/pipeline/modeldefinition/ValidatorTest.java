@@ -615,14 +615,6 @@ public class ValidatorTest extends AbstractModelDefTest {
                 .go();
     }
 
-    @Issue ("JENKINS-51891")
-    @Test
-    public void invalidNestedAgent() throws Exception {
-        expectError("invalidNestedAgent")
-                .logContains(Messages.ModelParser_TooManyAgentsInStage())
-                .go();
-    }
-
     @Issue("JENKINS-42550")
     @Test
     public void undefinedSectionReferencesCorrectly() throws Exception {
@@ -816,6 +808,14 @@ public class ValidatorTest extends AbstractModelDefTest {
     public void multipleStepsSectionsInStage() throws Exception {
         expectError("multipleStepsSectionsInStage")
                 .logContains(Messages.Parser_MultipleOfSection("steps"))
+                .go();
+    }
+
+    @Issue ("JENKINS-51891")
+    @Test
+    public void nestedAgentFoundInStage() throws Exception {
+        expectError("nestedAgentFoundInStage")
+                .logContains(Messages.ModelParser_NestedAgentFoundInStage())
                 .go();
     }
 
