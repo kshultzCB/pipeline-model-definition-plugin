@@ -1,107 +1,64 @@
-// This Jenkinsfile's main purpose is to show a real-world-ish example
-// of what Pipeline config syntax actually looks like. 
 pipeline {
-    // Make sure that the tools we need are installed and on the path.
-    tools {
-        maven "mvn"
-        jdk "jdk8"
-    }
-
-    agent none
-
-    // Set log rotation, timeout and timestamps in the console
-    options {
-        buildDiscarder(logRotator(numToKeepStr:'10'))
-        timestamps()
-        timeout(time: 120, unit: 'MINUTES')
-    }
-
-    // Make sure we have GIT_COMMITTER_NAME and GIT_COMMITTER_EMAIL set due to machine weirdness.
-    environment {
-        GIT_COMMITTER_NAME = "jenkins"
-        GIT_COMMITTER_EMAIL = "jenkins@jenkins.io"
-        NEWER_CORE_VERSION = "2.138.3"
-        TEST_TIMEOUT = "600"
-    }
-    
-
-    stages {
-        // While there is only one stage here, you can specify as many stages as you like!
-        stage("build") {
-            parallel {
-                stage("linux") {
-                    agent {
-                        label "highmem"
-                    }
-                    steps {
-                        sh "mvn clean install -Dmaven.test.failure.ignore=true -Djenkins.test.timeout=${TEST_TIMEOUT}"
-                    }
-                    post {
-                        // No matter what the build status is, run this step. There are other conditions
-                        // available as well, such as "success", "failed", "unstable", and "changed".
-                        always {
-                            junit testResults: '*/target/surefire-reports/*.xml', keepLongStdio: true
-                        }
-                        success {
-                            archive "**/target/*.hpi"
-                            archive "**/target/site/jacoco/jacoco.xml"
-                        }
-                        unstable {
-                            archive "**/target/*.hpi"
-                            archive "**/target/site/jacoco/jacoco.xml"
-                        }
-                    }
-                }
-                stage("windows") {
-                    agent {
-                        label "windows"
-                    }
-                    steps {
-                        bat "mvn clean install -Dconcurrency=1 -Dmaven.test.failure.ignore=true -Dcodenarc.skip=true -Djenkins.test.timeout=${TEST_TIMEOUT}"
-                    }
-                    post {
-                        always {
-                            junit testResults: '*/target/surefire-reports/*.xml', keepLongStdio: true
-                        }
-                    }
-                }
-                stage("linux-newer-core") {
-                    agent {
-                        label "highmem"
-                    }
-                    steps {
-                        sh "mvn clean install -Dmaven.test.failure.ignore=true -Djava.level=8 -Djenkins.test.timeout=${TEST_TIMEOUT} -Djenkins.version=${NEWER_CORE_VERSION}"
-                    }
-                    post {
-                        // No matter what the build status is, run this step. There are other conditions
-                        // available as well, such as "success", "failed", "unstable", and "changed".
-                        always {
-                            junit testResults: '*/target/surefire-reports/*.xml', keepLongStdio: true
-                        }
-                        success {
-                            archive "**/target/*.hpi"
-                            archive "**/target/site/jacoco/jacoco.xml"
-                        }
-                        unstable {
-                            archive "**/target/*.hpi"
-                            archive "**/target/site/jacoco/jacoco.xml"
-                        }
-                    }
-                }
-                stage("windows-newer-core") {
-                    agent {
-                        label "windows"
-                    }
-                    steps {
-                        bat "mvn clean install -Dconcurrency=1 -Dmaven.test.failure.ignore=true -Dcodenarc.skip=true -Djava.level=8 -Djenkins.test.timeout=${TEST_TIMEOUT} -Djenkins.version=${NEWER_CORE_VERSION}"
-                    }
-                    post {
-                        always {
-                            junit testResults: '*/target/surefire-reports/*.xml', keepLongStdio: true
-                        }
-                    }
-                }
-            }
+  agent any
+  environment {
+    ORG = 'kshultzcb'
+    APP_NAME = 'pipeline-model-definition-plugin'
+    CHARTMUSEUM_CREDS = credentials('jenkins-x-chartmuseum')
+  }
+  stages {
+    stage('CI Build and push snapshot') {
+      when {
+        branch 'PR-*'
+      }
+      environment {
+        PREVIEW_VERSION = "0.0.0-SNAPSHOT-$BRANCH_NAME-$BUILD_NUMBER"
+        PREVIEW_NAMESPACE = "$APP_NAME-$BRANCH_NAME".toLowerCase()
+        HELM_RELEASE = "$PREVIEW_NAMESPACE".toLowerCase()
+      }
+      steps {
+        sh "mvn versions:set -DnewVersion=$PREVIEW_VERSION"
+        sh "mvn install"
+        sh "skaffold version"
+        sh "export VERSION=$PREVIEW_VERSION && skaffold build -f skaffold.yaml"
+        sh "jx step post build --image $DOCKER_REGISTRY/$ORG/$APP_NAME:$PREVIEW_VERSION"
+        dir('charts/preview') {
+          sh "make preview"
+          sh "jx preview --app $APP_NAME --dir ../.."
         }
+      }
     }
+    stage('Build Release') {
+      when {
+        branch 'master'
+      }
+      steps {
+        git 'https://github.com/kshultzcb/pipeline-model-definition-plugin.git'
+
+        // so we can retrieve the version in later steps
+        sh "echo \$(jx-release-version) > VERSION"
+        sh "mvn versions:set -DnewVersion=\$(cat VERSION)"
+        sh "jx step tag --version \$(cat VERSION)"
+        sh "mvn clean deploy"
+        sh "skaffold version"
+        sh "export VERSION=`cat VERSION` && skaffold build -f skaffold.yaml"
+        sh "jx step post build --image $DOCKER_REGISTRY/$ORG/$APP_NAME:\$(cat VERSION)"
+      }
+    }
+    stage('Promote to Environments') {
+      when {
+        branch 'master'
+      }
+      steps {
+        dir('charts/pipeline-model-definition-plugin') {
+          sh "jx step changelog --version v\$(cat ../../VERSION)"
+
+          // release the helm chart
+          sh "jx step helm release"
+
+          // promote through all 'Auto' promotion Environments
+          sh "jx promote -b --all-auto --timeout 1h --version \$(cat ../../VERSION)"
+        }
+      }
+    }
+  }
 }
